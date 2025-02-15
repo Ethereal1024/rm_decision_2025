@@ -36,7 +36,7 @@ private:
     std::chrono::steady_clock::time_point endtime_;
 
     std::shared_ptr<tf2_ros::Buffer> tf2_buffer_;
-    std::shared_ptr<tf2_ros::TransformListener> tf2_listener_;
+    rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr tf2_listener_;
 
     rclcpp::CallbackGroup::SharedPtr callback_group_;
 
@@ -45,6 +45,9 @@ private:
     NavState nav_state_;
     int failed_count_;
     bool available_;
+    std::string label_;
+
+    void tf2_listener_callback(const tf2_msgs::msg::TFMessage::SharedPtr msg);
 
     void nav_callback(const navigator_interfaces::msg::Navigate::SharedPtr msg);
 
