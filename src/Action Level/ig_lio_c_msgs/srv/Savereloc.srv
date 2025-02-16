@@ -1,7 +1,0 @@
-string ask
-geometry_msgs/Quaternion offset_rot
-geometry_msgs/Point offset_pos
----
-string status
-geometry_msgs/Quaternion offset_rot
-geometry_msgs/Point offset_pos
