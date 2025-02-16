@@ -33,10 +33,6 @@ Navigator::Navigator(const rclcpp::NodeOptions& options) : Node("navigator", opt
     tf2_listener_ = this->create_subscription<tf2_msgs::msg::TFMessage>(
         attachment + "tf", 10, std::bind(&Navigator::tf2_listener_callback, this, std::placeholders::_1), sub_opt);
 
-    // save_server_ = this->create_service<ig_lio_c_msgs::srv::Savereloc>(
-    //     "SaveReloc", std::bind(&Navigator::save_callback, this, std::placeholders::_1, std::placeholders::_2),
-    //     rmw_qos_profile_services_default);
-
     endtime_ = std::chrono::steady_clock::now();
     nav_state_ = INIT;
     failed_count_ = 0;
@@ -95,10 +91,8 @@ void Navigator::result_callback(
 }
 
 void Navigator::tf2_listener_callback(const tf2_msgs::msg::TFMessage::SharedPtr msg) {
-    // RCLCPP_INFO(this->get_logger(), "%.ld tfs received!", msg->transforms.size());
     for (const auto& transform : msg->transforms) {
         tf2_buffer_->setTransform(transform, label_, true);
-        // RCLCPP_INFO(this->get_logger(), "%s %s", transform.header.frame_id.c_str(), transform.child_frame_id.c_str());
     }
 }
 
@@ -131,9 +125,6 @@ void Navigator::nav_cancel() {
 void Navigator::get_current_pose() {
     geometry_msgs::msg::TransformStamped bfMsg;
     try {
-        // std::string frames = tf2_buffer_->allFramesAsString();
-        // RCLCPP_INFO(this->get_logger(), "All frames: %s", frames.c_str());
-
         bfMsg = tf2_buffer_->lookupTransform(
             "map", "base_footprint",
             tf2::TimePointZero);
@@ -153,8 +144,3 @@ void Navigator::get_current_pose() {
 
     current_pose_pub_->publish(currentPose);
 }
-
-// void Navigator::save_callback(const ig_lio_c_msgs::srv::Savereloc::Request::SharedPtr request,
-//                               const ig_lio_c_msgs::srv::Savereloc::Response::SharedPtr response) {
-//     return;
-// }
