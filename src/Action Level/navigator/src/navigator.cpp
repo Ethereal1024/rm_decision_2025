@@ -1,6 +1,15 @@
 #include "navigator/navigator.hpp"
 
 Navigator::Navigator(const rclcpp::NodeOptions& options) : Node("navigator", options) {
+
+    this->declare_parameter<std::string>("navigator_label", "red_standard_robot1");
+    label_ = this->get_parameter("navigator_label").as_string();
+
+    std::string attachment = label_;
+    if (!attachment.empty()) {
+        attachment += "/";
+    }
+
     callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
     auto sub_opt = rclcpp::SubscriptionOptions();
     auto pub_opt = rclcpp::PublisherOptions();
@@ -9,9 +18,9 @@ Navigator::Navigator(const rclcpp::NodeOptions& options) : Node("navigator", opt
 
     nav_msg_sub_ = this->create_subscription<navigator_interfaces::msg::Navigate>(
         "to_navigator", 10, std::bind(&Navigator::nav_callback, this, std::placeholders::_1), sub_opt);
-    current_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/navigator/current_pose", 10);
+    current_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(attachment + "navigator/current_pose", 10);
 
-    nav_to_pose_client_ = rclcpp_action::create_client<nav2_msgs::action::NavigateToPose>(this, "navigate_to_pose", callback_group_);
+    nav_to_pose_client_ = rclcpp_action::create_client<nav2_msgs::action::NavigateToPose>(this, attachment + "navigate_to_pose", callback_group_);
     send_goal_options_.goal_response_callback = std::bind(&Navigator::goal_response_callback, this,
                                                           std::placeholders::_1);
     send_goal_options_.feedback_callback = std::bind(&Navigator::feedback_callback, this, std::placeholders::_1,
@@ -21,11 +30,8 @@ Navigator::Navigator(const rclcpp::NodeOptions& options) : Node("navigator", opt
     timer_ = this->create_wall_timer(std::chrono::milliseconds(200), std::bind(&Navigator::timer_callback, this), callback_group_);
 
     tf2_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
-    tf2_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf2_buffer_);
-
-    save_server_ = this->create_service<ig_lio_c_msgs::srv::Savereloc>(
-        "SaveReloc", std::bind(&Navigator::save_callback, this,std::placeholders::_1, std::placeholders::_2),
-        rmw_qos_profile_services_default);  // 22.04: rmw_qos_profile_services_default
+    tf2_listener_ = this->create_subscription<tf2_msgs::msg::TFMessage>(
+        attachment + "tf", 10, std::bind(&Navigator::tf2_listener_callback, this, std::placeholders::_1), sub_opt);
 
     endtime_ = std::chrono::steady_clock::now();
     nav_state_ = INIT;
@@ -50,7 +56,7 @@ void Navigator::feedback_callback(
     rclcpp_action::ClientGoalHandle<nav2_msgs::action::NavigateToPose>::SharedPtr future,
     const std::shared_ptr<const nav2_msgs::action::NavigateToPose::Feedback> feedback) {
     RCLCPP_INFO(this->get_logger(), "Current point: (%.2f, %.2f)", feedback->current_pose.pose.position.x, feedback->current_pose.pose.position.y);
-    RCLCPP_INFO(this->get_logger(), "Received feedback: distance to target point: %.2f m", feedback->distance_remaining);
+    RCLCPP_INFO(this->get_logger(), "Distance to target point: %.2f m", feedback->distance_remaining);
 }
 
 void Navigator::result_callback(
@@ -84,9 +90,15 @@ void Navigator::result_callback(
     }
 }
 
+void Navigator::tf2_listener_callback(const tf2_msgs::msg::TFMessage::SharedPtr msg) {
+    for (const auto& transform : msg->transforms) {
+        tf2_buffer_->setTransform(transform, label_, true);
+    }
+}
+
 void Navigator::nav_callback(const navigator_interfaces::msg::Navigate::SharedPtr msg) {
     if (msg->instant) {
-        // nav_cancel();  // 该功能的实现有点问题，现阶段暂时注释掉
+        nav_cancel();
     }
     nav_to_pose(msg->pose);
 }
@@ -96,7 +108,7 @@ void Navigator::timer_callback() {
 }
 
 void Navigator::nav_to_pose(const geometry_msgs::msg::PoseStamped& msg) {
-    RCLCPP_INFO(this->get_logger(), "Received goal point: (%.2f, %.2f)", msg.pose.position.x, msg.pose.position.y);
+    RCLCPP_INFO(this->get_logger(), "Received goal point (%.2f, %.2f), waiting for navigation server...", msg.pose.position.x, msg.pose.position.y);
     nav_to_pose_client_->wait_for_action_server();
     auto goal_msg = nav2_msgs::action::NavigateToPose::Goal();
     goal_msg.pose = msg;
@@ -111,10 +123,10 @@ void Navigator::nav_cancel() {
 }
 
 void Navigator::get_current_pose() {
-    geometry_msgs::msg::TransformStamped odom_msg;
+    geometry_msgs::msg::TransformStamped bfMsg;
     try {
-        odom_msg = tf2_buffer_->lookupTransform(
-            "map", "livox_frame",
+        bfMsg = tf2_buffer_->lookupTransform(
+            "map", "base_footprint",
             tf2::TimePointZero);
     } catch (const tf2::TransformException& ex) {
         RCLCPP_INFO(
@@ -125,15 +137,10 @@ void Navigator::get_current_pose() {
     RMDecision::PoseStamped currentPose;
     currentPose.header.stamp = this->now();
     currentPose.header.frame_id = "map";
-    currentPose.pose.position.x = odom_msg.transform.translation.x;
-    currentPose.pose.position.y = odom_msg.transform.translation.y;
-    currentPose.pose.position.z = odom_msg.transform.translation.z;
-    currentPose.pose.orientation = odom_msg.transform.rotation;
+    currentPose.pose.position.x = bfMsg.transform.translation.x;
+    currentPose.pose.position.y = bfMsg.transform.translation.y;
+    currentPose.pose.position.z = bfMsg.transform.translation.z;
+    currentPose.pose.orientation = bfMsg.transform.rotation;
 
     current_pose_pub_->publish(currentPose);
-}
-
-void Navigator::save_callback(const ig_lio_c_msgs::srv::Savereloc::Request::SharedPtr request,
-                              const ig_lio_c_msgs::srv::Savereloc::Response::SharedPtr response) {
-    return;
 }

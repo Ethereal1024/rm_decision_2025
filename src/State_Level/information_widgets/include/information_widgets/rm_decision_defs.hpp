@@ -1,9 +1,12 @@
 #pragma once
 
+#include "tf2/LinearMath/Quaternion.h"
+
 #include <cassert>
 #include <cmath>
 #include <string>
 #include <vector>
+#include <random>
 
 #include "geometry_msgs/msg/pose.hpp"
 #include "iw_interfaces/msg/architecture.hpp"
@@ -101,14 +104,19 @@ public:
     }
 
     PoseStamped to_pose_stamped_with_orientation(
-        const rclcpp::Time& time, const geometry_msgs::msg::Quaternion& orientation) const {
+        const rclcpp::Time& time, const double orientation) const {
         PoseStamped res;
         res.header.stamp = time;
         res.header.frame_id = "map";
         res.pose.position.x = x;
         res.pose.position.y = y;
         res.pose.position.z = 0;
-        res.pose.orientation = orientation;
+        tf2::Quaternion t;
+        t.setRPY(0, 0, orientation);
+        res.pose.orientation.x = t.x();
+        res.pose.orientation.y = t.y();
+        res.pose.orientation.z = t.z();
+        res.pose.orientation.w = t.w();
         return res;
     }
 
@@ -126,11 +134,11 @@ public:
         return std::pair<double, double>(k, b);
     }
 
-    inline bool parrallel_to(const PlaneCoordinate& another) {
+    inline bool parrallel_to(const PlaneCoordinate& another) const {
         return (another.x * y == another.y * x);
     }
 
-    inline bool perp_to(const PlaneCoordinate& another) {
+    inline bool perp_to(const PlaneCoordinate& another) const {
         return (*this * another == 0);
     }
 
@@ -165,6 +173,13 @@ public:
         double b1 = coeff1.second;
         double b2 = coeff2.second;
         return -(b1 - b2) / (k1 - k2);
+    }
+
+    static PlaneCoordinate random_point(double radius) {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_real_distribution<> dis(-radius, radius);
+        return PlaneCoordinate(dis(gen), dis(gen));
     }
 };
 
